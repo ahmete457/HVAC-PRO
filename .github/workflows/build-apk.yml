@@ -24,8 +24,22 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extract project
-        run: unzip HVAC_PRO_v2_Android_Project_FIXED.zip -d .
+      - name: Extract V3 project
+        run: |
+          unzip -q HVAC_PRO_v3_Android_Project.zip -d extracted
+
+      - name: Find Android project
+        run: |
+          SETTINGS_FILE=$(find extracted -type f \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)
+
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "Android project settings file not found!"
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          echo "Project directory: $PROJECT_DIR"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -34,12 +48,23 @@ jobs:
 
       - name: Build APK
         run: |
-          cd HVAC_PRO_Android_Studio
+          cd "$PROJECT_DIR"
           gradle assembleDebug
+
+      - name: Prepare APK
+        run: |
+          APK=$(find "$PROJECT_DIR" -type f -path "*/build/outputs/apk/debug/*.apk" -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "APK file not found!"
+            exit 1
+          fi
+
+          cp "$APK" HVAC-PRO-APK.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: HVAC-PRO-APK
-          path: HVAC_PRO_Android_Studio/app/build/outputs/apk/debug/app-debug.apk
+          name: HVAC-PRO-V3-APK
+          path: HVAC-PRO-APK.apk
           if-no-files-found: error
