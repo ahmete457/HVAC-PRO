@@ -25,7 +25,7 @@ jobs:
           java-version: '17'
 
       - name: Extract project
-        run: unzip -q HVAC_PRO_v2_Android_Project.zip -d .
+        run: unzip HVAC_PRO_v2_Android_Project_FIXED.zip -d .
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
