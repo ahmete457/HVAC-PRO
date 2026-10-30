@@ -26,7 +26,7 @@ jobs:
 
       - name: Extract V3 project
         run: |
-          unzip -q HVAC_PRO_v3_Android_Project.zip -d extracted
+          run: unzip HVAC_PRO_v4_Android_Project.zip -d .
 
       - name: Find Android project
         run: |
