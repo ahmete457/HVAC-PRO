@@ -45,7 +45,7 @@ jobs:
             echo "Checking: $ZIP_FILE"
 
             if unzip -Z1 "$ZIP_FILE" | grep -Eq '(^|/)settings\.gradle(\.kts)?$'; then
-              echo "Found Android project: $ZIP_FILE"
+              echo "Found project: $ZIP_FILE"
               unzip -q "$ZIP_FILE" -d extracted
               FOUND=true
               break
@@ -69,13 +69,6 @@ jobs:
 
           PROJECT_DIR=$(dirname "$SETTINGS_FILE")
 
-          if [ ! -f "$PROJECT_DIR/gradlew" ] && \
-             [ ! -f "$PROJECT_DIR/build.gradle" ] && \
-             [ ! -f "$PROJECT_DIR/build.gradle.kts" ]; then
-            echo "Invalid Android project root!"
-            exit 1
-          fi
-
           echo "Project directory: $PROJECT_DIR"
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
 
@@ -90,32 +83,38 @@ jobs:
         working-directory: ${{ steps.project.outputs.project_dir }}
         run: gradle --no-daemon bundleRelease
 
-      - name: Locate build outputs
-        id: outputs
-        shell: bash
+      - name: Verify APK and AAB
         working-directory: ${{ steps.project.outputs.project_dir }}
+        shell: bash
         run: |
           set -euo pipefail
 
           APK=$(find . -type f -path '*/build/outputs/apk/debug/*.apk' | head -n 1)
           AAB=$(find . -type f -path '*/build/outputs/bundle/release/*.aab' | head -n 1)
 
-          test -n "$APK" || { echo "APK missing"; exit 1; }
-          test -n "$AAB" || { echo "AAB missing"; exit 1; }
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK not found!"
+            exit 1
+          fi
 
-          echo "apk=$PWD/$APK" >> "$GITHUB_OUTPUT"
-          echo "aab=$PWD/$AAB" >> "$GITHUB_OUTPUT"
+          if [ -z "$AAB" ]; then
+            echo "ERROR: AAB not found!"
+            exit 1
+          fi
+
+          echo "APK found: $APK"
+          echo "AAB found: $AAB"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: HVAC-PRO-APK
-          path: ${{ steps.outputs.outputs.apk }}
+          path: ${{ steps.project.outputs.project_dir }}/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
           name: HVAC-PRO-AAB
-          path: ${{ steps.outputs.outputs.aab }}
+          path: ${{ steps.project.outputs.project_dir }}/**/build/outputs/bundle/release/*.aab
           if-no-files-found: error
