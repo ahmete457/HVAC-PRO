@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   build:
-    name: Build APK and AAB
+    name: Build APK and Signed AAB
     runs-on: ubuntu-latest
 
     steps:
@@ -37,13 +37,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           mkdir -p extracted
           FOUND=false
 
           while IFS= read -r ZIP_FILE; do
             echo "Checking: $ZIP_FILE"
-
             if unzip -Z1 "$ZIP_FILE" | grep -Eq '(^|/)settings\.gradle(\.kts)?$'; then
               echo "Found project: $ZIP_FILE"
               unzip -q "$ZIP_FILE" -d extracted
@@ -54,13 +52,10 @@ jobs:
 
           if [ "$FOUND" != "true" ]; then
             echo "ERROR: Android project ZIP not found!"
-            find . -maxdepth 4 -type f -name '*.zip'
             exit 1
           fi
 
-          SETTINGS_FILE=$(find extracted -type f \
-            \( -name settings.gradle -o -name settings.gradle.kts \) \
-            | head -n 1)
+          SETTINGS_FILE=$(find extracted -type f \( -name settings.gradle -o -name settings.gradle.kts \) | head -n 1)
 
           if [ -z "$SETTINGS_FILE" ]; then
             echo "Gradle settings file missing!"
@@ -68,9 +63,29 @@ jobs:
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS_FILE")
-
-          echo "Project directory: $PROJECT_DIR"
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare upload keystore
+        shell: bash
+        env:
+          SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$SIGNING_KEY_BASE64" ] || [ -z "$SIGNING_STORE_PASSWORD" ] || [ -z "$SIGNING_KEY_ALIAS" ]; then
+            echo "ERROR: Signing secrets are missing."
+            exit 1
+          fi
+
+          echo "$SIGNING_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/hvacpro-upload.jks"
+          chmod 600 "$RUNNER_TEMP/hvacpro-upload.jks"
+
+          keytool -list \
+            -keystore "$RUNNER_TEMP/hvacpro-upload.jks" \
+            -storepass "$SIGNING_STORE_PASSWORD" \
+            -alias "$SIGNING_KEY_ALIAS" >/dev/null
 
       - name: Check Gradle version
         run: gradle --version
@@ -79,8 +94,13 @@ jobs:
         working-directory: ${{ steps.project.outputs.project_dir }}
         run: gradle --no-daemon assembleDebug
 
-      - name: Build Release AAB
+      - name: Build Signed Release AAB
         working-directory: ${{ steps.project.outputs.project_dir }}
+        env:
+          HVAC_UPLOAD_STORE_FILE: ${{ runner.temp }}/hvacpro-upload.jks
+          HVAC_UPLOAD_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          HVAC_UPLOAD_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          HVAC_UPLOAD_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: gradle --no-daemon bundleRelease
 
       - name: Verify APK and AAB
@@ -102,8 +122,9 @@ jobs:
             exit 1
           fi
 
+          jarsigner -verify "$AAB" >/dev/null
           echo "APK found: $APK"
-          echo "AAB found: $AAB"
+          echo "Signed AAB signature verified: $AAB"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -115,6 +136,6 @@ jobs:
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
-          name: HVAC-PRO-AAB
+          name: HVAC-PRO-SIGNED-AAB
           path: ${{ steps.project.outputs.project_dir }}/**/build/outputs/bundle/release/*.aab
           if-no-files-found: error
