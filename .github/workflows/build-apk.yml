@@ -5,7 +5,8 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - '**.zip'
+      - '*.zip'
+      - '**/*.zip'
       - '.github/workflows/build-apk.yml'
 
 permissions:
@@ -38,11 +39,13 @@ jobs:
           set -e
 
           ZIP_FILE=$(find . -maxdepth 4 -type f \
-            -name 'HVAC_PRO*_Android_Project*.zip' \
+            -name 'HVAC_PRO_V13_6_20.zip' \
             | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
             echo "HVAC PRO ZIP file not found!"
+            echo "Available ZIP files:"
+            find . -maxdepth 4 -type f -name '*.zip'
             exit 1
           fi
 
@@ -80,14 +83,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: HVAC-PRO-APK
-          path: |
-            extracted/**/app/build/outputs/apk/debug/*.apk
+          path: extracted/**/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
           name: HVAC-PRO-AAB
-          path: |
-            extracted/**/app/build/outputs/bundle/release/*.aab
+          path: extracted/**/app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
