@@ -36,34 +36,45 @@ jobs:
         id: project
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          ZIP_FILE=$(find . -maxdepth 4 -type f \
-            -name 'HVAC_PRO_V13_6_20.zip' \
-            | head -n 1)
+          mkdir -p extracted
+          FOUND=false
 
-          if [ -z "$ZIP_FILE" ]; then
-            echo "HVAC PRO ZIP file not found!"
-            echo "Available ZIP files:"
+          while IFS= read -r ZIP_FILE; do
+            echo "Checking: $ZIP_FILE"
+
+            if unzip -Z1 "$ZIP_FILE" | grep -Eq '(^|/)settings\.gradle(\.kts)?$'; then
+              echo "Found Android project: $ZIP_FILE"
+              unzip -q "$ZIP_FILE" -d extracted
+              FOUND=true
+              break
+            fi
+          done < <(find . -maxdepth 4 -type f -name '*.zip' | sort)
+
+          if [ "$FOUND" != "true" ]; then
+            echo "ERROR: Android project ZIP not found!"
             find . -maxdepth 4 -type f -name '*.zip'
             exit 1
           fi
-
-          echo "Found project: $ZIP_FILE"
-
-          mkdir -p extracted
-          unzip -q "$ZIP_FILE" -d extracted
 
           SETTINGS_FILE=$(find extracted -type f \
             \( -name settings.gradle -o -name settings.gradle.kts \) \
             | head -n 1)
 
           if [ -z "$SETTINGS_FILE" ]; then
-            echo "Gradle settings file not found!"
+            echo "Gradle settings file missing!"
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+
+          if [ ! -f "$PROJECT_DIR/gradlew" ] && \
+             [ ! -f "$PROJECT_DIR/build.gradle" ] && \
+             [ ! -f "$PROJECT_DIR/build.gradle.kts" ]; then
+            echo "Invalid Android project root!"
+            exit 1
+          fi
 
           echo "Project directory: $PROJECT_DIR"
           echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
@@ -79,16 +90,32 @@ jobs:
         working-directory: ${{ steps.project.outputs.project_dir }}
         run: gradle --no-daemon bundleRelease
 
+      - name: Locate build outputs
+        id: outputs
+        shell: bash
+        working-directory: ${{ steps.project.outputs.project_dir }}
+        run: |
+          set -euo pipefail
+
+          APK=$(find . -type f -path '*/build/outputs/apk/debug/*.apk' | head -n 1)
+          AAB=$(find . -type f -path '*/build/outputs/bundle/release/*.aab' | head -n 1)
+
+          test -n "$APK" || { echo "APK missing"; exit 1; }
+          test -n "$AAB" || { echo "AAB missing"; exit 1; }
+
+          echo "apk=$PWD/$APK" >> "$GITHUB_OUTPUT"
+          echo "aab=$PWD/$AAB" >> "$GITHUB_OUTPUT"
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: HVAC-PRO-APK
-          path: extracted/**/app/build/outputs/apk/debug/*.apk
+          path: ${{ steps.outputs.outputs.apk }}
           if-no-files-found: error
 
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
           name: HVAC-PRO-AAB
-          path: extracted/**/app/build/outputs/bundle/release/*.aab
+          path: ${{ steps.outputs.outputs.aab }}
           if-no-files-found: error
